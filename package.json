@@ -1,0 +1,22 @@
+{
+  "name": "studybuddy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Study Buddy — all-in-one digital study companion (scalable MVP)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@studybuddy/api & npm run dev --workspace=@studybuddy/web",
+    "build": "npm run build --workspace=@studybuddy/shared && npm run build --workspace=@studybuddy/api && npm run build --workspace=@studybuddy/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "db:migrate": "npm run db:migrate --workspace=@studybuddy/api",
+    "db:seed": "npm run db:seed --workspace=@studybuddy/api"
+  },
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  }
+}

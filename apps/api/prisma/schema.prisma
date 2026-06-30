@@ -1,0 +1,211 @@
+// Study Buddy — database schema (source of truth)
+//
+// LOCAL DEV uses SQLite for zero-setup running (no Postgres/Redis to install).
+// PRODUCTION uses Postgres: change `provider` to "postgresql" and point
+// DATABASE_URL at your instance — the schema is otherwise identical.
+//
+// Notes on portability (deliberate, production-friendly choices):
+//  • enum-like fields (role/priority/kind) are stored as String and validated
+//    at the app boundary with zod. This avoids painful Postgres ENUM ALTERs and
+//    is fully scalable (indexed text). Allowed values live in @studybuddy/shared.
+//  • list fields (quiz options / answers) are stored as Json (jsonb on Postgres).
+//
+// Every user-owned row carries userId (indexed) so the dataset is tenant-scoped
+// and shardable by user when a single primary saturates.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  name         String
+  passwordHash String
+  role         String @default("STUDENT") // STUDENT | ADMIN
+
+  // Gamification + preferences (hot, tiny, read on every dashboard)
+  xp            Int       @default(0)
+  level         Int       @default(1)
+  streak        Int       @default(0)
+  lastStudyDate DateTime?
+  theme         String    @default("dark")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subjects     Subject[]
+  assignments  Assignment[]
+  notes        Note[]
+  decks        FlashcardDeck[]
+  flashcards   Flashcard[]
+  quizzes      Quiz[]
+  quizAttempts QuizAttempt[]
+  sessions     StudySession[]
+
+  @@index([email])
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String   @default("#3b82f6")
+  goals     Int      @default(5)
+  completed Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments Assignment[]
+  notes       Note[]
+  decks       FlashcardDeck[]
+  quizzes     Quiz[]
+  sessions    StudySession[]
+
+  @@index([userId])
+}
+
+model Assignment {
+  id          String    @id @default(cuid())
+  userId      String
+  subjectId   String?
+  title       String
+  dueDate     DateTime?
+  priority    String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, completed])
+  @@index([userId, dueDate])
+  @@index([subjectId])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String?
+  title     String
+  folder    String   @default("General")
+  content   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, folder])
+  @@index([userId, updatedAt])
+}
+
+model FlashcardDeck {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String?
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject?    @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  cards   Flashcard[]
+
+  @@index([userId])
+}
+
+model Flashcard {
+  id     String @id @default(cuid())
+  deckId String
+  userId String
+  front  String
+  back   String
+
+  // SM-2 spaced-repetition state
+  easeFactor     Float     @default(2.5)
+  intervalDays   Int       @default(0)
+  repetitions    Int       @default(0)
+  dueAt          DateTime  @default(now())
+  lastReviewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deck FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deckId])
+  @@index([userId, dueAt])
+}
+
+model Quiz {
+  id           String   @id @default(cuid())
+  userId       String
+  subjectId    String?
+  title        String
+  timeLimitSec Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  questions Question[]
+  attempts  QuizAttempt[]
+
+  @@index([userId])
+}
+
+model Question {
+  id           String @id @default(cuid())
+  quizId       String
+  prompt       String
+  options      String // JSON-encoded string[]  (jsonb on Postgres)
+  correctIndex Int
+  order        Int    @default(0)
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
+}
+
+model QuizAttempt {
+  id          String   @id @default(cuid())
+  quizId      String
+  userId      String
+  score       Int
+  total       Int
+  answers     String // JSON-encoded number[]  (jsonb on Postgres)
+  durationSec Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
+  @@index([userId])
+}
+
+model StudySession {
+  id          String   @id @default(cuid())
+  userId      String
+  subjectId   String?
+  durationSec Int
+  kind        String   @default("POMODORO") // POMODORO | FREEFORM
+  startedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, startedAt])
+  @@index([subjectId])
+}
