@@ -1,6 +1,6 @@
-import { ArrowLeft, Check, HelpCircle, Plus, Trophy, X } from 'lucide-react';
+import { ArrowLeft, Check, HelpCircle, Plus, Sparkles, Trophy, X } from 'lucide-react';
 import { useState } from 'react';
-import type { QuestionInput } from '@studybuddy/shared';
+import type { AiDifficulty, QuestionInput } from '@studybuddy/shared';
 import {
   type AttemptResult,
   useCreateQuiz,
@@ -8,6 +8,14 @@ import {
   useQuizzes,
   useSubmitAttempt,
 } from '../hooks/useQuizzes';
+import { useAiStatus, useGenerateQuiz } from '../hooks/useAI';
+import {
+  AiSourcePicker,
+  type AiSourceValue,
+  emptySource,
+  sourcePayload,
+} from '../components/AiSourcePicker';
+import { apiError } from '../lib/api';
 import { Button, Card, EmptyState, Field, Input, PageHeader, Spinner } from '../components/ui';
 
 function TakeQuiz({ quizId, onBack }: { quizId: string; onBack: () => void }) {
@@ -81,6 +89,74 @@ function emptyQuestion(): QuestionInput {
   return { prompt: '', options: ['', ''], correctIndex: 0 };
 }
 
+/** AI panel that drafts questions into the editable builder below. */
+function AiQuizGenerator({ onGenerated }: { onGenerated: (qs: QuestionInput[]) => void }) {
+  const status = useAiStatus();
+  const generate = useGenerateQuiz();
+  const [src, setSrc] = useState<AiSourceValue>(emptySource);
+  const [count, setCount] = useState(5);
+  const [difficulty, setDifficulty] = useState<AiDifficulty>('medium');
+  const [error, setError] = useState('');
+
+  if (!status.data) return null;
+  if (!status.data.enabled) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 p-3 text-xs text-slate-500 dark:border-slate-700">
+        ✨ AI generation activates once an <code>OPENAI_API_KEY</code> is set on the server.
+      </div>
+    );
+  }
+
+  function run() {
+    const payload = sourcePayload(src);
+    if (!payload) return setError('Enter a topic or pick a note first.');
+    setError('');
+    generate.mutate(
+      { ...payload, count, difficulty },
+      {
+        onSuccess: (res) => onGenerated(res.questions),
+        onError: (e) => setError(apiError(e)),
+      },
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-3 dark:border-brand-600/30 dark:bg-brand-600/10">
+      <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-700 dark:text-brand-100">
+        <Sparkles size={15} /> Generate with AI
+      </p>
+      <AiSourcePicker value={src} onChange={setSrc} />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Input
+          type="number"
+          min={1}
+          max={20}
+          value={count}
+          onChange={(e) => setCount(Number(e.target.value))}
+          className="w-20"
+          title="Number of questions"
+        />
+        <select
+          value={difficulty}
+          onChange={(e) => setDifficulty(e.target.value as AiDifficulty)}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+        >
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+        <Button onClick={run} loading={generate.isPending}>
+          <Sparkles size={15} /> Generate
+        </Button>
+      </div>
+      {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+      <p className="mt-2 text-[11px] text-slate-400">
+        Drafts appear below — review and edit before saving.
+      </p>
+    </div>
+  );
+}
+
 function QuizBuilder({ onDone }: { onDone: () => void }) {
   const createQuiz = useCreateQuiz();
   const [title, setTitle] = useState('');
@@ -98,6 +174,10 @@ function QuizBuilder({ onDone }: { onDone: () => void }) {
 
   return (
     <Card className="space-y-4">
+      <AiQuizGenerator
+        onGenerated={(qs) => setQuestions((prev) => [...prev.filter((p) => p.prompt.trim()), ...qs])}
+      />
+
       <Field label="Quiz title">
         <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Chapter 5 Review" />
       </Field>

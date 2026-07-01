@@ -1,74 +1,37 @@
-# Render Blueprint — provisions the whole stack from this repo.
-# In Render: New ▸ Blueprint ▸ connect this repo. It creates: Postgres, Redis,
-# the API (Docker), and the static web app. Secrets marked `generateValue` are
-# auto-created; values marked `sync: false` you fill in after the first deploy
-# (the two service URLs need to reference each other).
-# Docs: https://render.com/docs/blueprint-spec
-
-databases:
-  - name: studybuddy-db
-    databaseName: studybuddy
-    user: studybuddy
-    plan: free
+# Render Blueprint — single FREE all-in-one service (no expiring resources).
+#
+# One Docker web service serves the API + the web app on one origin.
+# Database is EXTERNAL free Neon Postgres (permanent — Render's own free
+# Postgres expires after 30 days, so we don't use it). Redis is in-memory
+# (REDIS_MOCK), so there's nothing else to provision.
+#
+# Deploy: New ▸ Blueprint ▸ connect this repo ▸ Apply, then paste the two
+# `sync: false` secrets (DATABASE_URL from Neon, OPENAI_API_KEY). See DEPLOY.md.
+# Note: the free web service sleeps after ~15 min idle (≈30–60s cold start).
 
 services:
-  # ── Redis (managed key/value) ──────────────────────────────────────────────
-  - type: redis
-    name: studybuddy-redis
-    plan: free
-    ipAllowList: [] # internal-only
-
-  # ── API (Express, Docker) ──────────────────────────────────────────────────
   - type: web
-    name: studybuddy-api
+    name: studybuddy
     runtime: docker
-    dockerfilePath: ./apps/api/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: API_PORT
-        value: 4000
-      - key: DATABASE_URL
-        fromDatabase:
-          name: studybuddy-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: studybuddy-redis
-          property: connectionString
+      - key: SERVE_WEB
+        value: "1"
+      - key: REDIS_MOCK
+        value: "1"
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      # Cross-site cookie (web and api are different domains on Render)
-      - key: COOKIE_SAMESITE
-        value: none
-      - key: EMAIL_FROM
-        value: Study Buddy <no-reply@studybuddy.app>
-      # ↓ Fill these in after the web service exists (Settings ▸ Environment):
-      - key: CORS_ORIGINS # e.g. https://studybuddy-web.onrender.com
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      # ↓ Paste these in the Render dashboard (Environment) — never commit them:
+      - key: DATABASE_URL # Neon connection string (postgresql://…?sslmode=require)
         sync: false
-      - key: APP_WEB_URL # same web URL (used in password-reset emails)
+      - key: OPENAI_API_KEY # your OpenAI key (enables the AI features)
         sync: false
-      - key: SMTP_URL # optional: smtps://user:pass@smtp.provider.com:465
-        sync: false
-
-  # ── Web (React SPA, static) ────────────────────────────────────────────────
-  - type: web
-    name: studybuddy-web
-    runtime: static
-    buildCommand: npm install && npm run build --workspace=@studybuddy/web
-    staticPublishPath: apps/web/dist
-    pullRequestPreviewsEnabled: false
-    envVars:
-      # ↓ Set to the API URL after it deploys, then redeploy the web service:
-      - key: VITE_API_URL # e.g. https://studybuddy-api.onrender.com/api/v1
-        sync: false
-    routes:
-      - type: rewrite # SPA fallback
-        source: /*
-        destination: /index.html

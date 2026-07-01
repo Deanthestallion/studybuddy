@@ -1,8 +1,98 @@
-import { Plus, Save, Search, Trash2 } from 'lucide-react';
+import { FileText, Plus, Save, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useCreateNote, useDeleteNote, useNotes, useUpdateNote } from '../hooks/useNotes';
+import {
+  type GeneratedNote,
+  useAiStatus,
+  useGenerateNote,
+  useSummarizeNote,
+} from '../hooks/useAI';
+import { apiError } from '../lib/api';
 import type { Note } from '../lib/types';
 import { Button, Card, EmptyState, Input, PageHeader, Spinner, Textarea } from '../components/ui';
+
+/** AI note tools: write a study note from a topic, or summarize the open note. */
+function NotesAiPanel({
+  currentNoteId,
+  onDraft,
+}: {
+  currentNoteId?: string;
+  onDraft: (note: GeneratedNote) => void;
+}) {
+  const status = useAiStatus();
+  const genNote = useGenerateNote();
+  const summarize = useSummarizeNote();
+  const [topic, setTopic] = useState('');
+  const [length, setLength] = useState<'short' | 'medium' | 'long'>('medium');
+  const [error, setError] = useState('');
+
+  if (!status.data) return null;
+  if (!status.data.enabled) {
+    return (
+      <div className="mb-3 rounded-lg border border-dashed border-slate-300 p-2 text-xs text-slate-500 dark:border-slate-700">
+        ✨ AI note tools activate once an <code>OPENAI_API_KEY</code> is set on the server.
+      </div>
+    );
+  }
+
+  function writeNote() {
+    if (!topic.trim()) return setError('Enter a topic to explain.');
+    setError('');
+    genNote.mutate(
+      { topic: topic.trim(), length },
+      { onSuccess: onDraft, onError: (e) => setError(apiError(e)) },
+    );
+  }
+  function summarizeNote() {
+    if (!currentNoteId) return;
+    setError('');
+    summarize.mutate(
+      { noteId: currentNoteId },
+      { onSuccess: onDraft, onError: (e) => setError(apiError(e)) },
+    );
+  }
+
+  return (
+    <div className="mb-3 rounded-xl border border-brand-200 bg-brand-50/60 p-3 dark:border-brand-600/30 dark:bg-brand-600/10">
+      <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-700 dark:text-brand-100">
+        <Sparkles size={15} /> AI note tools
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="Topic to explain, e.g. Mitosis"
+          className="min-w-[160px] flex-1"
+        />
+        <select
+          value={length}
+          onChange={(e) => setLength(e.target.value as 'short' | 'medium' | 'long')}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+        >
+          <option value="short">Short</option>
+          <option value="medium">Medium</option>
+          <option value="long">Long</option>
+        </select>
+        <Button onClick={writeNote} loading={genNote.isPending}>
+          <Sparkles size={15} /> Write note
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={summarizeNote}
+          loading={summarize.isPending}
+          disabled={!currentNoteId}
+          title={currentNoteId ? 'Summarize the open note' : 'Open a saved note to summarize it'}
+        >
+          <FileText size={15} /> Summarize this note
+        </Button>
+      </div>
+      {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+      <p className="mt-2 text-[11px] text-slate-400">
+        Output loads into the editor as a new note — review &amp; edit, then Save.
+      </p>
+    </div>
+  );
+}
 
 export default function Notes() {
   const [search, setSearch] = useState('');
@@ -79,6 +169,13 @@ export default function Notes() {
         </Card>
 
         <Card>
+          <NotesAiPanel
+            currentNoteId={selected?.id}
+            onDraft={(n) => {
+              setSelected(null);
+              setDraft((d) => ({ title: n.title, folder: d.folder || 'General', content: n.content }));
+            }}
+          />
           <div className="mb-3 flex flex-wrap gap-2">
             <Input
               value={draft.title}

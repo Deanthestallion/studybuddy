@@ -6,3 +6,4 @@ export * from './schemas/note.js';
 export * from './schemas/flashcard.js';
 export * from './schemas/quiz.js';
 export * from './schemas/session.js';
+export * from './schemas/ai.js';

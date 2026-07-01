@@ -6,8 +6,11 @@ import { redis } from './lib/redis';
 
 const app = createApp();
 
-const server = app.listen(env.API_PORT, () => {
-  logger.info(`🚀 Study Buddy API listening on :${env.API_PORT} (${env.NODE_ENV})`);
+// Hosts like Render/Fly inject the port to bind via $PORT; fall back to API_PORT.
+const port = Number(process.env.PORT) || env.API_PORT;
+
+const server = app.listen(port, () => {
+  logger.info(`🚀 Study Buddy API listening on :${port} (${env.NODE_ENV})`);
 });
 
 // ── Graceful shutdown: stop taking traffic, drain, close datastores ──────────

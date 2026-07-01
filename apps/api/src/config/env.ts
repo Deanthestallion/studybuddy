@@ -39,6 +39,29 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().default('Study Buddy <no-reply@studybuddy.app>'),
   // Public URL of the web app, used to build links inside emails.
   APP_WEB_URL: z.string().optional(),
+
+  // All-in-one mode: when enabled, the API also serves the built web SPA from
+  // the same origin (no CORS / cross-site cookie concerns). Used for single-host
+  // / tunnel deployments. WEB_DIST_PATH overrides the default ../web/dist.
+  SERVE_WEB: z.string().optional(),
+  WEB_DIST_PATH: z.string().optional(),
+
+  // ── AI study assistant (quiz/flashcard generation) ──────────────────────────
+  // Provider is auto-detected: OpenAI-compatible if OPENAI_* is set, else
+  // Anthropic if ANTHROPIC_API_KEY is set, else the feature is disabled.
+
+  // OpenAI-compatible (OpenAI, Azure, Groq, OpenRouter, or a LOCAL/free model
+  // via Ollama/LM Studio). For a local model set OPENAI_BASE_URL (no key needed)
+  // e.g. http://localhost:11434/v1 and OPENAI_JSON_MODE=object.
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_BASE_URL: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
+  OPENAI_JSON_MODE: z.enum(['schema', 'object']).default('schema'),
+
+  // Anthropic (optional alternative). Set ANTHROPIC_MODEL to claude-sonnet-4-6
+  // or claude-haiku-4-5 to trade capability for cost.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -52,3 +75,4 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 export const isProd = env.NODE_ENV === 'production';
+export const serveWeb = env.SERVE_WEB === '1' || env.SERVE_WEB === 'true';

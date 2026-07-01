@@ -12,6 +12,8 @@ build/
 .env
 .env.local
 .env.*.local
+# all-in-one/tunnel-only build override (would break a split web/api deploy)
+apps/web/.env.production
 
 # prisma
 apps/api/prisma/*.db

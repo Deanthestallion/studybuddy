@@ -11,6 +11,7 @@ const Register = lazy(() => import('./pages/Register'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Assistant = lazy(() => import('./pages/Assistant'));
 const Planner = lazy(() => import('./pages/Planner'));
 const Notes = lazy(() => import('./pages/Notes'));
 const Flashcards = lazy(() => import('./pages/Flashcards'));
@@ -39,6 +40,7 @@ export function App() {
           }
         >
           <Route path="/" element={<Dashboard />} />
+          <Route path="/assistant" element={<Assistant />} />
           <Route path="/planner" element={<Planner />} />
           <Route path="/notes" element={<Notes />} />
           <Route path="/flashcards" element={<Flashcards />} />

@@ -1,100 +1,103 @@
-# Deploying Study Buddy
+# Deploying Study Buddy — free & permanent
 
-The repo is production-ready. Fastest path is **one platform (Render)** via the
-included [`render.yaml`](render.yaml) blueprint — it provisions Postgres, Redis,
-the API, and the static web app together.
+This deploys the whole app as **one free Render web service** (the API also serves
+the web UI) backed by a **free Neon Postgres** that never expires. In-memory
+Redis (`REDIS_MOCK`) means there's nothing else to provision.
 
-You need two free accounts: **GitHub** (to host the code) and **Render**
-(to run it). Email (password reset) is optional and can be added later.
+**Cost: $0.** No credit card. Signups needed: GitHub, [Neon](https://neon.tech),
+[Render](https://render.com). Plus your OpenAI key for the AI features.
+
+> Why Neon and not Render's database? Render's *free* Postgres **expires after 30
+> days**. Neon's free Postgres runs indefinitely. The Render **web service** does
+> not expire — it just sleeps after ~15 min idle (≈30–60s cold start on the next
+> visit; see "Keep it awake" below).
 
 ---
 
-## Step 1 — Push the code to GitHub
+## Step 1 — Free Postgres on Neon (2 min)
 
-A local git repo with an initial commit already exists. Create a remote and push:
+1. Sign up at **[neon.tech](https://neon.tech)** (GitHub login, no card).
+2. **Create project** (any name/region).
+3. On the dashboard, copy the **connection string** — it looks like:
+   `postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require`
+   Keep it handy; it's your `DATABASE_URL`.
 
+## Step 2 — Push the code to GitHub
+
+Already a repo? Skip. Otherwise:
 ```bash
-# authenticate once (opens a browser)
 gh auth login
-
-# create the repo and push (private)
 gh repo create studybuddy --private --source=. --remote=origin --push
 ```
 
-No `gh`? Create an empty repo on github.com, then:
-```bash
-git remote add origin https://github.com/<you>/studybuddy.git
-git push -u origin main
-```
+## Step 3 — Deploy on Render (Blueprint)
 
-## Step 2 — Deploy on Render
+1. **[dashboard.render.com/blueprints](https://dashboard.render.com/blueprints)** → **New Blueprint Instance**.
+2. Connect GitHub, pick your **studybuddy** repo → Render reads [`render.yaml`](render.yaml)
+   and shows one service, **studybuddy** (Docker, free).
+3. It prompts for the two secret env vars — paste them:
+   | Key | Value |
+   |---|---|
+   | `DATABASE_URL` | your Neon connection string from Step 1 |
+   | `OPENAI_API_KEY` | your OpenAI key (`sk-…`) |
+   `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` are auto-generated.
+4. **Apply**. First build takes a few minutes (Docker). On boot it runs
+   `prisma db push` to create the schema in Neon, then starts.
+5. Open your URL: **`https://studybuddy-xxxx.onrender.com`** — the full app.
 
-1. In Render: **New ▸ Blueprint**, connect your GitHub, pick the `studybuddy` repo.
-2. Render reads `render.yaml` and shows 4 resources (db, redis, api, web). Click **Apply**.
-3. Wait for the first build. `JWT_*` secrets are generated automatically;
-   `DATABASE_URL` and `REDIS_URL` are wired automatically.
+## Step 4 — (Optional) Seed a demo account
 
-## Step 3 — Connect the two service URLs (one-time)
-
-After the services exist, set the cross-references (Service ▸ **Environment**):
-
-| Service | Variable | Value |
-|---|---|---|
-| `studybuddy-api` | `CORS_ORIGINS` | the web URL, e.g. `https://studybuddy-web.onrender.com` |
-| `studybuddy-api` | `APP_WEB_URL` | same web URL |
-| `studybuddy-web` | `VITE_API_URL` | the API URL + `/api/v1`, e.g. `https://studybuddy-api.onrender.com/api/v1` |
-
-Then **Manual Deploy ▸ Clear build cache & deploy** the web service (Vite inlines
-`VITE_API_URL` at build time). The API redeploys automatically on env change.
-
-## Step 4 — (Optional) Seed demo data
-
-From the `studybuddy-api` service **Shell** tab:
+Render service → **Shell** tab:
 ```bash
 npm run db:prod:seed
 ```
-Login: `demo@studybuddy.app` / `Password123!`
+Login: `demo@studybuddy.app` / `Password123!` — or just register your own.
 
 ---
 
-## Email (password reset) — optional
+## Keep it awake (optional, free)
 
-Without SMTP, reset links are logged, not emailed (the rest of the app is fully
-functional). To enable real emails, set `SMTP_URL` on `studybuddy-api`:
+Free web services sleep after ~15 min idle. To avoid cold starts, ping `/health`
+every ~10 min with a free scheduler like **[cron-job.org](https://cron-job.org)**
+or **[UptimeRobot](https://uptimerobot.com)** pointed at
+`https://studybuddy-xxxx.onrender.com/health`.
 
+## AI: free / local option
+
+The AI features use OpenAI by default. To run them **with no hosted key** (free),
+point the app at a local model instead — set on the service's Environment tab:
 ```
-# Resend / SES / Postmark / SendGrid / Mailgun all give SMTP creds
-SMTP_URL=smtps://USER:PASSWORD@smtp.resend.com:465
-EMAIL_FROM=Study Buddy <no-reply@yourdomain.com>
+OPENAI_BASE_URL=http://localhost:11434/v1   # only if the model is reachable from the host
+OPENAI_MODEL=llama3.1
+OPENAI_JSON_MODE=object
 ```
-(Verify your sender domain with the provider so mail isn't marked spam.)
+(For a cloud deploy, a local Ollama isn't reachable — use an OpenAI key or a free
+OpenAI-compatible provider's key here.)
 
 ## Custom domain
 
-Add your domain to **both** services in Render (DNS is auto-guided), then update
-`CORS_ORIGINS`, `APP_WEB_URL`, and `VITE_API_URL` to the custom hosts and redeploy
-the web service.
+Render → your service → **Settings → Custom Domains**. Free, with auto TLS. No
+env changes needed (single origin).
 
 ---
 
-## Notes for scale / production hardening
+## Notes / scaling
 
-- **Free tier** spins services down on inactivity (cold starts) and the free
-  Postgres expires after 90 days — upgrade those plans before real traffic.
-- **Migrations**: deploys currently `prisma db push` the schema (fast, fine for
-  first launch). For change tracking, generate migrations against Postgres and
-  switch the Dockerfile `CMD` to `prisma migrate deploy --schema prisma/schema.postgres.prisma`.
-- **Two schemas**: [`prisma/schema.prisma`](apps/api/prisma/schema.prisma) is the
+- **Migrations:** the container runs `prisma db push` on boot (fast, fine for now).
+  For change tracking, generate migrations against Postgres and switch the
+  Dockerfile `CMD` to `prisma migrate deploy`.
+- **Schemas:** [`prisma/schema.prisma`](apps/api/prisma/schema.prisma) is the
   local/SQLite default; [`prisma/schema.postgres.prisma`](apps/api/prisma/schema.postgres.prisma)
-  is production. Models are identical — keep them in sync if you change one.
+  is production — keep them in sync.
+- **Split deploy (advanced):** to run web and API separately (CDN for static +
+  scalable API), use [`apps/api/Dockerfile`](apps/api/Dockerfile) for the API and
+  host `apps/web/dist` on Vercel/Netlify/Cloudflare Pages; set the web's
+  `VITE_API_URL` to the API origin and the API's `CORS_ORIGINS` to the web origin.
 
-## Alternative stack (best-of-breed instead of all-Render)
+## Local dev
 
-If you prefer: **Neon** (Postgres) + **Upstash** (Redis) + **Render/Railway/Fly**
-(API container) + **Vercel** (web) + **Resend** (email). Set the same env vars;
-the API Dockerfile and the web build are unchanged. Point `VITE_API_URL` at your
-API host and `CORS_ORIGINS`/`APP_WEB_URL` at your Vercel domain.
 ```bash
-# web on Vercel (from apps/web), API base set via env:
-#   VITE_API_URL = https://<your-api-host>/api/v1
+cp .env.example .env      # already set up locally (SQLite + in-memory Redis)
+npm install
+npm run dev               # api :4000, web :5173  (or the all-in-one on :4000)
 ```

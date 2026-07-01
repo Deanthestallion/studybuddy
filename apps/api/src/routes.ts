@@ -7,6 +7,7 @@ import flashcardsRoutes from './modules/flashcards/flashcards.routes';
 import quizzesRoutes from './modules/quizzes/quizzes.routes';
 import sessionsRoutes from './modules/sessions/sessions.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
+import aiRoutes from './modules/ai/ai.routes';
 
 /** All v1 API routes, mounted under /api/v1 by the app. */
 export const apiRouter = Router();
@@ -21,3 +22,4 @@ apiRouter.use('/flashcards', flashcardsRoutes);
 apiRouter.use('/quizzes', quizzesRoutes);
 apiRouter.use('/sessions', sessionsRoutes);
 apiRouter.use('/dashboard', dashboardRoutes);
+apiRouter.use('/ai', aiRoutes);

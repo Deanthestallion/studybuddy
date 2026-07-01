@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Moon,
+  Sparkles,
   Sun,
   Timer,
   Flame,
@@ -19,6 +20,7 @@ import { useThemeStore } from '../store/theme';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/assistant', label: 'Assistant', icon: Sparkles },
   { to: '/planner', label: 'Planner', icon: Calendar },
   { to: '/notes', label: 'Notes', icon: FileText },
   { to: '/flashcards', label: 'Flashcards', icon: Brain },

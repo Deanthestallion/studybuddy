@@ -1,4 +1,4 @@
-import { ArrowLeft, Brain, Plus } from 'lucide-react';
+import { ArrowLeft, Brain, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import {
   useAddCard,
@@ -7,6 +7,14 @@ import {
   useDueCards,
   useReviewCard,
 } from '../hooks/useFlashcards';
+import { type GeneratedCard, useAiStatus, useGenerateFlashcards } from '../hooks/useAI';
+import {
+  AiSourcePicker,
+  type AiSourceValue,
+  emptySource,
+  sourcePayload,
+} from '../components/AiSourcePicker';
+import { apiError } from '../lib/api';
 import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Spinner, Textarea } from '../components/ui';
 
 const GRADES = [
@@ -15,6 +23,100 @@ const GRADES = [
   { label: 'Good', grade: 4, color: '#3b82f6' },
   { label: 'Easy', grade: 5, color: '#10b981' },
 ];
+
+/** Generate cards with AI into an editable review list, then add them to the deck. */
+function AiCardGenerator({ deckId }: { deckId: string }) {
+  const status = useAiStatus();
+  const generate = useGenerateFlashcards();
+  const addCard = useAddCard(deckId);
+  const [src, setSrc] = useState<AiSourceValue>(emptySource);
+  const [count, setCount] = useState(10);
+  const [drafts, setDrafts] = useState<GeneratedCard[]>([]);
+  const [error, setError] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  if (!status.data) return null;
+  if (!status.data.enabled) {
+    return (
+      <Card className="mx-auto max-w-xl">
+        <p className="text-xs text-slate-500">
+          ✨ AI card generation activates once an <code>OPENAI_API_KEY</code> is set on the server.
+        </p>
+      </Card>
+    );
+  }
+
+  function run() {
+    const payload = sourcePayload(src);
+    if (!payload) return setError('Enter a topic or pick a note first.');
+    setError('');
+    generate.mutate(
+      { ...payload, count },
+      { onSuccess: (res) => setDrafts(res.cards), onError: (e) => setError(apiError(e)) },
+    );
+  }
+
+  async function addAll() {
+    setAdding(true);
+    try {
+      for (const c of drafts) {
+        if (c.front.trim() && c.back.trim()) await addCard.mutateAsync({ front: c.front, back: c.back });
+      }
+      setDrafts([]);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  const patch = (i: number, p: Partial<GeneratedCard>) =>
+    setDrafts((d) => d.map((c, idx) => (idx === i ? { ...c, ...p } : c)));
+
+  return (
+    <Card className="mx-auto max-w-xl">
+      <h3 className="mb-3 flex items-center gap-2 font-semibold text-brand-700 dark:text-brand-100">
+        <Sparkles size={16} /> Generate cards with AI
+      </h3>
+      <AiSourcePicker value={src} onChange={setSrc} />
+      <div className="mt-2 flex items-center gap-2">
+        <Input
+          type="number"
+          min={1}
+          max={30}
+          value={count}
+          onChange={(e) => setCount(Number(e.target.value))}
+          className="w-20"
+          title="Number of cards"
+        />
+        <Button onClick={run} loading={generate.isPending}>
+          <Sparkles size={15} /> Generate
+        </Button>
+      </div>
+      {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+
+      {drafts.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <p className="text-xs text-slate-500">Review &amp; edit, then add to the deck:</p>
+          {drafts.map((c, i) => (
+            <div key={i} className="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+              <Input value={c.front} onChange={(e) => patch(i, { front: e.target.value })} placeholder="Front" className="mb-1" />
+              <Textarea value={c.back} onChange={(e) => patch(i, { back: e.target.value })} placeholder="Back" className="min-h-[60px]" />
+              <button
+                type="button"
+                onClick={() => setDrafts((d) => d.filter((_, idx) => idx !== i))}
+                className="mt-1 flex items-center gap-1 text-xs text-red-500"
+              >
+                <Trash2 size={12} /> Remove
+              </button>
+            </div>
+          ))}
+          <Button onClick={addAll} loading={adding}>
+            <Plus size={16} /> Add {drafts.length} card{drafts.length === 1 ? '' : 's'} to deck
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function ReviewMode({ deckId, onBack }: { deckId: string; onBack: () => void }) {
   const { data: due, isLoading } = useDueCards(deckId);
@@ -77,6 +179,8 @@ function ReviewMode({ deckId, onBack }: { deckId: string; onBack: () => void }) 
           ))}
         </div>
       )}
+
+      <AiCardGenerator deckId={deckId} />
 
       <Card className="mx-auto max-w-xl">
         <h3 className="mb-3 font-semibold">Add a card</h3>
